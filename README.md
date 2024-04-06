@@ -3,3 +3,6 @@
 ### METHOD /iwbep/if_mgw_appl_srv_runtime~changeset_begin  
 ### METHOD /iwbep/if_mgw_appl_srv_runtime~changeset_end  
 ### METHOD /iwbep/if_mgw_appl_srv_runtime~changeset_process  
+
+* OBS:  
+* Ainda falta adicionar aqui, como é a chamada na VIEW do App Fiori.
