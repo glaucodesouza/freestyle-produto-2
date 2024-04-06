@@ -1,0 +1,589 @@
+class ZCL_Z270CADPRODUTOS_DPC_EXT definition
+  public
+  inheriting from ZCL_Z270CADPRODUTOS_DPC
+  create public .
+
+public section.
+
+  methods /IWBEP/IF_MGW_APPL_SRV_RUNTIME~CHANGESET_BEGIN
+    redefinition .
+  methods /IWBEP/IF_MGW_APPL_SRV_RUNTIME~CHANGESET_END
+    redefinition .
+  methods /IWBEP/IF_MGW_APPL_SRV_RUNTIME~CHANGESET_PROCESS
+    redefinition .
+  methods /IWBEP/IF_MGW_APPL_SRV_RUNTIME~CREATE_STREAM
+    redefinition .
+  methods /IWBEP/IF_MGW_APPL_SRV_RUNTIME~DELETE_STREAM
+    redefinition .
+  methods /IWBEP/IF_MGW_APPL_SRV_RUNTIME~EXECUTE_ACTION
+    redefinition .
+  methods /IWBEP/IF_MGW_APPL_SRV_RUNTIME~UPDATE_STREAM
+    redefinition .
+  methods /IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM
+    redefinition .
+protected section.
+
+  methods ANEXOSET_GET_ENTITY
+    redefinition .
+  methods ANEXOSET_GET_ENTITYSET
+    redefinition .
+  methods Z270CADPRODUTOSS_CREATE_ENTITY
+    redefinition .
+  methods Z270CADPRODUTOSS_DELETE_ENTITY
+    redefinition .
+  methods Z270CADPRODUTOSS_UPDATE_ENTITY
+    redefinition .
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_Z270CADPRODUTOS_DPC_EXT IMPLEMENTATION.
+
+
+  METHOD /iwbep/if_mgw_appl_srv_runtime~changeset_begin.
+*    DATA ls_operation_info LIKE LINE OF it_operation_info.
+
+** set cv_defer_mode as TRUE to call changeset_process method
+*    LOOP AT it_operation_info INTO ls_operation_info.
+*      IF ls_operation_info-content_id IS NOT INITIAL OR
+*         ls_operation_info-content_id_ref IS NOT INITIAL.
+*        cv_defer_mode = abap_true.
+*      ENDIF.
+*    ENDLOOP.
+
+*    cv_defer_mode = abap_true.
+    cv_defer_mode = ''.
+
+  ENDMETHOD.
+
+
+  METHOD /iwbep/if_mgw_appl_srv_runtime~changeset_end.
+    COMMIT WORK.
+  ENDMETHOD.
+
+
+  METHOD /iwbep/if_mgw_appl_srv_runtime~changeset_process.
+
+    DATA:
+      lv_operation_counter  TYPE i VALUE 0,
+      lr_context            TYPE REF TO /iwbep/cl_mgw_request,
+      lr_entry_provider     TYPE REF TO /iwbep/if_mgw_entry_provider,
+      lr_message_container  TYPE REF TO /iwbep/if_message_container,
+      lr_entity_data        TYPE REF TO data,
+      ls_context_details    TYPE /iwbep/if_mgw_core_srv_runtime=>ty_s_mgw_request_context,
+      ls_changeset_response LIKE LINE OF ct_changeset_response.
+
+    FIELD-SYMBOLS:
+        <fs_ls_changeset_request>  LIKE LINE OF it_changeset_request.
+
+    DATA(lv_container) = mo_context->get_message_container( ).
+
+    LOOP AT it_changeset_request ASSIGNING <fs_ls_changeset_request>.
+      lr_context          ?= <fs_ls_changeset_request>-request_context.
+      lr_entry_provider    = <fs_ls_changeset_request>-entry_provider.
+      lr_message_container = <fs_ls_changeset_request>-msg_container.
+      ls_context_details   = lr_context->get_request_details( ).
+      CASE ls_context_details-target_entity.
+        WHEN 'Z270CADPRODUTOS'.
+          "Do the processing here
+          IF line_exists( ls_context_details-key_tab[ 1 ] ).
+            IF ls_context_details-key_tab[ 1 ]-name = 'Codigo'.
+              DATA(lv_codigo) = ls_context_details-key_tab[ 1 ]-value.
+              SELECT SINGLE * FROM z270cadprodutos
+                INTO @DATA(ls_z270cadprodutos)
+                WHERE codigo = @lv_codigo.
+              IF sy-subrc = 0.
+                DELETE z270cadprodutos FROM ls_z270cadprodutos.
+                IF sy-subrc = 0.
+
+                  copy_data_to_ref(
+                      EXPORTING
+                        is_data = ls_z270cadprodutos
+                      CHANGING
+                        cr_data = ls_changeset_response-entity_data ).
+
+                  ls_changeset_response-operation_no = <fs_ls_changeset_request>-operation_no.
+                  INSERT ls_changeset_response INTO TABLE ct_changeset_response.
+                ELSE.
+                  " ERRO. Sair.
+                  lv_container->add_message_text_only(
+                    EXPORTING
+                      iv_msg_type               = 'E'
+                      iv_msg_text               = 'Erro ao deletar'
+                      iv_is_leading_message     = 'X'
+                      iv_add_to_response_header = 'X' ).
+
+                  DATA(lv_erro) = 'X'.
+                  RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+                    EXPORTING
+                      message_container = lv_container.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+        WHEN OTHERS.
+      ENDCASE.
+    ENDLOOP.
+
+    IF lv_erro = 'X'.
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          message_container = lv_container.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD /iwbep/if_mgw_appl_srv_runtime~create_stream.
+
+    DATA: ls_entity TYPE zcl_zmonitorvendas_mpc=>ts_anexo.
+
+
+    DATA: ls_anexo TYPE zanexo_270.
+
+    ls_anexo-filename = iv_slug.
+    ls_anexo-sydate   = sy-datum.
+    ls_anexo-sytime   = sy-uzeit.
+    ls_anexo-value    = is_media_resource-value.
+    ls_anexo-mimetype = is_media_resource-mime_type.
+    INSERT INTO zanexo_270 VALUES ls_anexo.
+
+    MOVE-CORRESPONDING ls_anexo TO ls_entity.
+
+    copy_data_to_ref(
+        EXPORTING
+          is_data = ls_entity
+          CHANGING
+            cr_data = er_entity ).
+
+  ENDMETHOD.
+
+
+  METHOD /iwbep/if_mgw_appl_srv_runtime~delete_stream.
+
+    DATA: ls_entity TYPE zcl_zmonitorvendas_mpc=>ts_anexo.
+
+    io_tech_request_context->get_converted_keys(
+        IMPORTING
+          es_key_values = ls_entity ).
+
+    DELETE FROM zanexo_270 WHERE filename = ls_entity-filename.
+
+  ENDMETHOD.
+
+
+  METHOD /iwbep/if_mgw_appl_srv_runtime~execute_action.
+
+    DATA: ls_entity  TYPE zcl_z270cadprodutos_mpc=>ts_z270cadprodutos,
+          ls_produto TYPE z270cadprodutos,
+          lv_status  TYPE sap_bool.
+
+    DATA(ls_header) = io_tech_request_context->get_request_headers( ).
+
+    " Mensagem
+    DATA(lv_container) = mo_context->get_message_container( ).
+
+    CASE iv_action_name.
+      WHEN 'aprovar_produto'.
+
+        io_tech_request_context->get_converted_parameters(
+        IMPORTING
+          es_parameter_values = ls_entity
+        ).
+
+        " ERRO
+        IF ls_entity IS INITIAL.
+          " ERRO. Sair.
+          lv_container->add_message_text_only(
+            EXPORTING
+              iv_msg_type               = 'E'
+              iv_msg_text               = 'Erro da leitura do Entity !'
+          ).
+          RETURN.
+***      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+***        EXPORTING
+***          message_container = lv_container.
+        ENDIF.
+
+        SELECT SINGLE * FROM z270cadprodutos INTO ls_produto WHERE codigo EQ ls_entity-codigo.
+        " ERRO
+        IF sy-subrc <> 0.
+          " ERRO. Sair.
+          lv_container->add_message_text_only(
+            EXPORTING
+              iv_msg_type               = 'E'
+              iv_msg_text               = 'Erro. Produto não localizado p/ aprovação !'
+          ).
+          RETURN.
+***      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+***        EXPORTING
+***          message_container = lv_container.
+        ENDIF.
+
+        IF ls_produto-aprovado = ''.
+          ls_produto-aprovado = 'X'.
+        ELSE.
+          ls_produto-aprovado = ''.
+        ENDIF.
+
+        UPDATE z270cadprodutos
+           SET aprovado = ls_produto-aprovado
+          WHERE codigo = ls_produto-codigo.
+        IF sy-subrc <> 0.
+          " ERRO. Sair.
+          lv_container->add_message_text_only(
+            EXPORTING
+              iv_msg_type               = 'E'
+              iv_msg_text               = 'Erro. Produto já existe !'
+          ).
+          RETURN.
+***      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+***        EXPORTING
+***          message_container = lv_container.
+        ENDIF.
+
+        "DEVOLVE DADOS ATUALIZADOS PARA FRONT END
+        MOVE-CORRESPONDING ls_produto TO ls_entity.
+
+        copy_data_to_ref(
+        EXPORTING
+          is_data = ls_entity
+          CHANGING
+            cr_data = er_data
+        ).
+
+
+      WHEN 'deletar_produto'.
+        io_tech_request_context->get_converted_parameters(
+        IMPORTING
+          es_parameter_values = ls_entity
+        ).
+
+        " ERRO
+        IF ls_entity IS INITIAL.
+          " ERRO. Sair.
+          lv_container->add_message_text_only(
+            EXPORTING
+              iv_msg_type               = 'E'
+              iv_msg_text               = 'Erro da leitura do Entity !'
+          ).
+          RETURN.
+***      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+***        EXPORTING
+***          message_container = lv_container.
+        ENDIF.
+
+        SELECT SINGLE * FROM z270cadprodutos INTO ls_produto WHERE codigo EQ ls_entity-codigo.
+        " ERRO
+        IF sy-subrc <> 0.
+          " ERRO. Sair.
+          lv_container->add_message_text_only(
+            EXPORTING
+              iv_msg_type               = 'E'
+              iv_msg_text               = 'Erro. Produto não localizado p/ deleção !'
+          ).
+          RETURN.
+***      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+***        EXPORTING
+***          message_container = lv_container.
+        ENDIF.
+
+        DELETE z270cadprodutos FROM ls_produto.
+        IF sy-subrc <> 0.
+          " ERRO. Sair.
+          lv_container->add_message_text_only(
+            EXPORTING
+              iv_msg_type               = 'E'
+              iv_msg_text               = 'Erro!'
+          ).
+          RETURN.
+***      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+***        EXPORTING
+***          message_container = lv_container.
+        ENDIF.
+
+        "DEVOLVE DADOS ATUALIZADOS PARA FRONT END
+        MOVE-CORRESPONDING ls_produto TO ls_entity.
+
+        copy_data_to_ref(
+        EXPORTING
+          is_data = ls_entity
+          CHANGING
+            cr_data = er_data
+        ).
+
+      WHEN OTHERS.
+    ENDCASE.
+
+  ENDMETHOD.
+
+
+  METHOD /iwbep/if_mgw_appl_srv_runtime~get_stream.
+
+    DATA: ls_stream TYPE ty_s_media_resource,
+          ls_anexo  TYPE zanexo_270.
+
+    DATA: ls_entity TYPE zcl_zmonitorvendas_mpc=>ts_anexo.
+
+    io_tech_request_context->get_converted_keys(
+        IMPORTING
+          es_key_values = ls_entity ).
+
+    SELECT SINGLE * FROM zanexo_270 INTO ls_anexo WHERE filename = ls_entity-filename.
+
+    IF ls_anexo IS NOT INITIAL.
+
+      ls_stream-value = ls_anexo-value.
+      ls_stream-mime_type = ls_anexo-mimetype.
+
+      copy_data_to_ref(
+       EXPORTING
+         is_data = ls_stream
+         CHANGING
+           cr_data = er_stream ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD /iwbep/if_mgw_appl_srv_runtime~update_stream.
+
+    DATA: ls_entity TYPE zcl_zmonitorvendas_mpc=>ts_anexo,
+          ls_anexo  TYPE zanexo_270.
+
+    io_tech_request_context->get_converted_keys(
+        IMPORTING
+          es_key_values = ls_entity ).
+
+
+    ls_anexo-filename = ls_entity-filename.
+    ls_anexo-sydate   = sy-datum.
+    ls_anexo-sytime   = sy-uzeit.
+    ls_anexo-value    = is_media_resource-value.
+    ls_anexo-mimetype = is_media_resource-mime_type.
+
+    UPDATE zanexo_270 FROM ls_anexo.
+
+  ENDMETHOD.
+
+
+  METHOD anexoset_get_entity.
+
+    DATA: ls_entity LIKE er_entity.
+
+    io_tech_request_context->get_converted_keys(
+    IMPORTING
+      es_key_values = ls_entity ).
+
+    SELECT SINGLE filename
+                  sydate
+                  sytime
+                  value
+                  mimetype
+    FROM zanexo_270
+    INTO CORRESPONDING FIELDS OF er_entity
+    WHERE filename EQ ls_entity-filename.
+
+  ENDMETHOD.
+
+
+  METHOD anexoset_get_entityset.
+
+    SELECT  filename
+            sydate
+            sytime
+            value
+            mimetype
+     FROM zanexo_270
+     INTO CORRESPONDING FIELDS OF TABLE et_entityset.
+
+  ENDMETHOD.
+
+
+  METHOD z270cadprodutoss_create_entity.
+
+    DATA: ls_cadprodutos TYPE z270cadprodutos.
+    DATA(lv_container) = mo_context->get_message_container( ).
+
+    io_data_provider->read_entry_data(
+      IMPORTING
+        es_data = er_entity
+    ).
+
+    MOVE-CORRESPONDING er_entity TO ls_cadprodutos.
+
+    " Trartr erro descrição VAZIA
+    IF ls_cadprodutos-descricao = ''.
+
+      lv_container->add_message_text_only(
+        EXPORTING
+          iv_msg_type               = 'E'
+          iv_msg_text               = 'Descrição vazia'
+          iv_is_leading_message     = abap_true
+          iv_add_to_response_header = abap_true ).
+
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          message_container = lv_container.
+
+    ENDIF.
+
+    SELECT MAX( codigo ) FROM z270cadprodutos INTO ls_cadprodutos-codigo.
+    ADD 1 TO ls_cadprodutos-codigo.
+
+    " Validar cadastro repetido
+    SELECT COUNT( * )
+      FROM z270cadprodutos
+      WHERE descricao = ls_cadprodutos-descricao.
+
+    IF sy-subrc = 0.
+      " ERRO. Sair.
+      lv_container->add_message_text_only(
+        EXPORTING
+          iv_msg_type               = 'E'
+          iv_msg_text               = `Produto ` && ls_cadprodutos-descricao && ` já existe !`
+          iv_is_leading_message     = abap_true
+          iv_add_to_response_header = abap_true ).
+
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          message_container = lv_container.
+
+    ENDIF.
+
+    IF ls_cadprodutos-meins = ''.
+      ls_cadprodutos-meins = 'KG'.
+    ENDIF.
+    IF ls_cadprodutos-waerk = ''.
+      ls_cadprodutos-waerk = 'BRL'.
+    ENDIF.
+
+    INSERT z270cadprodutos FROM ls_cadprodutos.
+
+    IF sy-subrc = 0.
+
+      er_entity-codigo = ls_cadprodutos-codigo.
+
+      lv_container->add_message_text_only(
+        EXPORTING
+          iv_msg_type               = 'S'
+          iv_msg_text               = `Produto ` && ls_cadprodutos-descricao && ` criado com sucesso !`
+          iv_is_leading_message     = abap_true
+          iv_add_to_response_header = abap_true ).
+
+    ELSE.
+
+      lv_container->add_message_text_only(
+        EXPORTING
+          iv_msg_type               = 'E'
+          iv_msg_text               = `Erro ao inserir produto ` && ls_cadprodutos-descricao && ` na tabela !`
+          iv_is_leading_message     = abap_true
+          iv_add_to_response_header = abap_true ).
+
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          message_container = lv_container.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD z270cadprodutoss_delete_entity.
+    DATA: ls_keys TYPE zcl_z270cadprodutos_mpc=>ts_z270cadprodutos.
+    DATA(lv_container) = mo_context->get_message_container( ).
+
+    io_tech_request_context->get_converted_keys(
+    IMPORTING
+      es_key_values = ls_keys ).
+
+    DELETE FROM z270cadprodutos
+     WHERE codigo = ls_keys-codigo.
+
+    IF sy-subrc = 0.
+
+      lv_container->add_message_text_only(
+        EXPORTING
+          iv_msg_type               = 'S'
+          iv_msg_text               = 'Produto excluído com sucesso !'
+          iv_is_leading_message     = 'X'
+          iv_add_to_response_header = 'X' ).
+
+    ELSE.
+      lv_container->add_message_text_only(
+        EXPORTING
+          iv_msg_type               = 'E'
+          iv_msg_text               = 'Erro ao deletar produto !'
+          iv_is_leading_message     = 'X'
+          iv_add_to_response_header = 'X' ).
+
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          message_container = lv_container.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD z270cadprodutoss_update_entity.
+
+    DATA(lv_container) = mo_context->get_message_container( ). "tratamento de mensagens
+    DATA: ls_cadprodutos TYPE z270cadprodutos.
+
+    "DADOS DA SOLICITAÇÃO
+    io_data_provider->read_entry_data(
+    IMPORTING
+    es_data = er_entity
+    ).
+
+    "CAMPOS CHAVE
+    DATA: ls_entity TYPE zcl_z270cadprodutos_mpc=>ts_z270cadprodutos.
+
+    io_tech_request_context->get_converted_keys(
+    IMPORTING
+      es_key_values = ls_entity
+      ).
+
+    MOVE-CORRESPONDING er_entity TO ls_cadprodutos.
+
+    ls_cadprodutos-codigo = ls_entity-codigo.
+
+    IF ls_cadprodutos-meins = ''.
+      ls_cadprodutos-meins = 'KG'.
+    ENDIF.
+    IF ls_cadprodutos-waerk = ''.
+      ls_cadprodutos-waerk = 'BRL'.
+    ENDIF.
+
+    MODIFY z270cadprodutos FROM ls_cadprodutos.
+
+    IF sy-subrc = 0.
+      er_entity-codigo = ls_cadprodutos-codigo.
+
+      lv_container->add_message_text_only(
+        EXPORTING
+          iv_msg_type               = 'S'
+          iv_msg_text               = 'Produto modificado !'
+          iv_is_leading_message     = 'X'
+          iv_add_to_response_header = 'X' ).
+
+    ELSE.
+
+      lv_container->add_message_text_only(
+        EXPORTING
+          iv_msg_type               = 'E'
+          iv_msg_text               = 'Erro ao modificar produto !'
+          iv_is_leading_message     = 'X'
+          iv_add_to_response_header = 'X' ).
+
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          message_container = lv_container.
+
+    ENDIF.
+
+  ENDMETHOD.
+ENDCLASS.
